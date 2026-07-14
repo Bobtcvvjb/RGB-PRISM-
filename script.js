@@ -1,3 +1,4 @@
+
 const SCREEN_WIDTH = 256;
 const SCREEN_HEIGHT = 240;
 const TILE_SIZE = 8;
