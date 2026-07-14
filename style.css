@@ -20,14 +20,11 @@ body {
     overflow: visible;
 
     /* ORIGINAL distortion you had */
-    transform-origin: center center;
-    transform:
-        perspective(800px)
-        scaleX(1.3)
-        scaleY(0.95)
-        rotateX(2deg)
-        rotateY(-2deg);
-
+   transform:
+        perspective(900px)
+        scaleX(1.25)
+        scaleY(1.05)
+        translateZ(-80px)
     /* Glow + slight blur */
     filter:
         contrast(1.2)
