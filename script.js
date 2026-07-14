@@ -1,14 +1,15 @@
+// --- constants ---
+const TILE_SIZE = 16;
+const ROOM_WIDTH = 16;   // tiles
+const ROOM_HEIGHT = 11;  // tiles
+const SCREEN_WIDTH = ROOM_WIDTH * TILE_SIZE;   // 256
+const SCREEN_HEIGHT = ROOM_HEIGHT * TILE_SIZE; // 176
 
-const SCREEN_WIDTH = 256;
-const SCREEN_HEIGHT = 240;
-const TILE_SIZE = 8;
-const ROOM_WIDTH = SCREEN_WIDTH / TILE_SIZE;   // 32
-const ROOM_HEIGHT = SCREEN_HEIGHT / TILE_SIZE; // 30
-
-
+// --- canvas ---
 const canvas = document.getElementById("screen");
 const ctx = canvas.getContext("2d");
 
+// --- input ---
 const input = { up:false, down:false, left:false, right:false, attack:false };
 
 window.addEventListener("keydown", e => {
@@ -26,70 +27,73 @@ window.addEventListener("keyup", e => {
     if (e.key === "ArrowRight") input.right = false;
     if (e.key === "z") input.attack = false;
 });
+
+// --- colors ---
 const COLORS = {
     bg: "#000000",
-    solid: "#FFFFFF",
+    solid: "#305080",
     player: "#f8f8f8",
     enemy: "#e06060",
     sword: "#f0f000"
 };
 
-// 0 = empty, 1 = solid
-function makeTestRoom() {
-    const tiles = new Array(ROOM_WIDTH * ROOM_HEIGHT).fill(0);
-    for (let x = 0; x < ROOM_WIDTH; x++) {
-        tiles[x] = 1;
-        tiles[(ROOM_HEIGHT - 1) * ROOM_WIDTH + x] = 1;
-    }
-    for (let y = 0; y < ROOM_HEIGHT; y++) {
-        tiles[y * ROOM_WIDTH] = 1;
-        tiles[y * ROOM_WIDTH + (ROOM_WIDTH - 1)] = 1;
-    }
+// --- room storage ---
+let rooms = {};
+let roomX = 0;
+let roomY = 0;
+let currentRoom = null;
 
+// --- ASCII room helper ---
+// '#' = solid, '.' = empty
+function roomFromAscii(lines) {
+    if (lines.length !== ROOM_HEIGHT)
+        throw new Error("Room must have " + ROOM_HEIGHT + " lines");
+    const tiles = [];
+    for (let y = 0; y < ROOM_HEIGHT; y++) {
+        const line = lines[y];
+        if (line.length !== ROOM_WIDTH)
+            throw new Error("Line " + y + " must have " + ROOM_WIDTH + " chars");
+        for (let x = 0; x < ROOM_WIDTH; x++) {
+            const ch = line[x];
+            tiles.push(ch === "#" ? 1 : 0);
+        }
+    }
     return tiles;
 }
 
-let world = [
-    [ { tiles: makeTestRoom(), enemies: [] } ]
-];
+function createRoom(x, y, asciiLines, enemies = []) {
+    rooms[`${x},${y}`] = {
+        tiles: roomFromAscii(asciiLines),
+        enemies: enemies
+    };
+}
 
-let roomX = 0;
-let roomY = 0;
-let currentRoom = world[0][0];
+// --- collision ---
 const COLLISION_TILE_SIZE = 16;
-const COLLISION_WIDTH = SCREEN_WIDTH / COLLISION_TILE_SIZE;   // 16
-const COLLISION_HEIGHT = SCREEN_HEIGHT / COLLISION_TILE_SIZE; // 15
+const COLLISION_WIDTH = ROOM_WIDTH;
+const COLLISION_HEIGHT = ROOM_HEIGHT;
+let collisionMap = new Array(COLLISION_WIDTH * COLLISION_HEIGHT).fill(0);
 
 function buildCollisionMap(room) {
     const map = new Array(COLLISION_WIDTH * COLLISION_HEIGHT).fill(0);
-    for (let cy = 0; cy < COLLISION_HEIGHT; cy++) {
-        for (let cx = 0; cx < COLLISION_WIDTH; cx++) {
-            // sample 2x2 tiles (8x8) inside this 16x16 block
-            let solid = false;
-            for (let ty = 0; ty < 2; ty++) {
-                for (let tx = 0; tx < 2; tx++) {
-                    const tileX = cx * 2 + tx;
-                    const tileY = cy * 2 + ty;
-                    const idx = tileY * ROOM_WIDTH + tileX;
-                    if (room.tiles[idx] === 1) solid = true;
-                }
-            }
-            map[cy * COLLISION_WIDTH + cx] = solid ? 1 : 0;
+    for (let y = 0; y < ROOM_HEIGHT; y++) {
+        for (let x = 0; x < ROOM_WIDTH; x++) {
+            const idx = y * ROOM_WIDTH + x;
+            map[idx] = room.tiles[idx] === 1 ? 1 : 0;
         }
     }
     return map;
 }
 
-let collisionMap = buildCollisionMap(currentRoom);
-
 function isSolidPixel(px, py) {
     if (px < 0 || py < 0 || px >= SCREEN_WIDTH || py >= SCREEN_HEIGHT) return true;
     const cx = Math.floor(px / COLLISION_TILE_SIZE);
     const cy = Math.floor(py / COLLISION_TILE_SIZE);
-    return collisionMap[cy * COLLISION_WIDTH + cx] === 1;
+    const idx = cy * COLLISION_WIDTH + cx;
+    return collisionMap[idx] === 1;
 }
 
-//player
+// --- player ---
 const player = {
     x: SCREEN_WIDTH / 2 - 4,
     y: SCREEN_HEIGHT / 2 - 4,
@@ -103,19 +107,48 @@ const player = {
         maxTime: 10
     }
 };
-let enemies = [
-    {
-        x: 80, y: 80, w: 8, h: 8,
-        dir: "left",
-        speed: 1,
-        state: "walk",
-        timer: 60
+
+// --- enemies ---
+let enemies = [];
+
+// --- sprites ---
+let sprites = [];
+
+function buildSprites() {
+    sprites = [];
+    sprites.push({ x: player.x, y: player.y, w: player.w, h: player.h, color: COLORS.player });
+    for (let e of enemies) {
+        sprites.push({ x: e.x, y: e.y, w: e.w, h: e.h, color: COLORS.enemy });
     }
-];
+    if (player.sword.active) {
+        const s = getSwordBox();
+        sprites.push({ x: s.x, y: s.y, w: s.w, h: s.h, color: COLORS.sword });
+    }
+    if (sprites.length > 64) sprites.length = 64;
+}
 
-//SPRITE CALL
-let sprites = []; 
+// --- sword / collision ---
+function getSwordBox() {
+    const size = 8;
+    let sx = player.x;
+    let sy = player.y;
+    if (player.dir === "up") sy -= size;
+    if (player.dir === "down") sy += player.h;
+    if (player.dir === "left") sx -= size;
+    if (player.dir === "right") sx += player.w;
+    return { x: sx, y: sy, w: size, h: size };
+}
 
+function aabbOverlap(a, b) {
+    return !(
+        a.x + a.w <= b.x ||
+        a.x >= b.x + b.w ||
+        a.y + a.h <= b.y ||
+        a.y >= b.y + b.h
+    );
+}
+
+// --- player update ---
 function updatePlayer() {
     let dx = 0, dy = 0;
 
@@ -123,6 +156,7 @@ function updatePlayer() {
     else if (input.down) { dy = player.speed; player.dir = "down"; }
     else if (input.left) { dx = -player.speed; player.dir = "left"; }
     else if (input.right) { dx = player.speed; player.dir = "right"; }
+
     if (!isSolidPixel(player.x + dx, player.y) &&
         !isSolidPixel(player.x + dx + player.w - 1, player.y + player.h - 1)) {
         player.x += dx;
@@ -131,47 +165,23 @@ function updatePlayer() {
         !isSolidPixel(player.x + player.w - 1, player.y + dy + player.h - 1)) {
         player.y += dy;
     }
+
     if (!player.sword.active && input.attack) {
         player.sword.active = true;
         player.sword.timer = player.sword.maxTime;
     }
     if (player.sword.active) {
         player.sword.timer--;
-        if (player.sword.timer <= 0) {
-            player.sword.active = false;
-        }
+        if (player.sword.timer <= 0) player.sword.active = false;
     }
+
     if (player.x < 0) changeRoom(-1, 0);
     if (player.x + player.w > SCREEN_WIDTH) changeRoom(1, 0);
     if (player.y < 0) changeRoom(0, -1);
     if (player.y + player.h > SCREEN_HEIGHT) changeRoom(0, 1);
 }
 
-function changeRoom(dx, dy) {
-    const newX = roomX + dx;
-    const newY = roomY + dy;
-    if (!world[newY] || !world[newY][newX]) {
-        // no room there, snap back
-        if (dx < 0) player.x = 0;
-        if (dx > 0) player.x = SCREEN_WIDTH - player.w;
-        if (dy < 0) player.y = 0;
-        if (dy > 0) player.y = SCREEN_HEIGHT - player.h;
-        return;
-    }
-    roomX = newX;
-    roomY = newY;
-    currentRoom = world[roomY][roomX];
-    collisionMap = buildCollisionMap(currentRoom);
-
-    // reposition player inside new room
-    if (dx < 0) player.x = SCREEN_WIDTH - player.w - 1;
-    if (dx > 0) player.x = 1;
-    if (dy < 0) player.y = SCREEN_HEIGHT - player.h - 1;
-    if (dy > 0) player.y = 1;
-
-    enemies = currentRoom.enemies || [];
-}
-
+// --- enemies update ---
 function updateEnemies() {
     for (let e of enemies) {
         e.timer--;
@@ -196,11 +206,9 @@ function updateEnemies() {
             e.y += dy;
         }
 
-        // sword hit detection (AABB)
         if (player.sword.active) {
             const swordBox = getSwordBox();
             if (aabbOverlap(swordBox, e)) {
-                // simple "kill"
                 e.x = -1000;
                 e.y = -1000;
             }
@@ -208,44 +216,34 @@ function updateEnemies() {
     }
 }
 
-function getSwordBox() {
-    const size = 8;
-    let sx = player.x;
-    let sy = player.y;
-    if (player.dir === "up") { sy -= size; }
-    if (player.dir === "down") { sy += player.h; }
-    if (player.dir === "left") { sx -= size; }
-    if (player.dir === "right") { sx += player.w; }
-    return { x: sx, y: sy, w: size, h: size };
-}
-
-function aabbOverlap(a, b) {
-    return !(
-        a.x + a.w <= b.x ||
-        a.x >= b.x + b.w ||
-        a.y + a.h <= b.y ||
-        a.y >= b.y + b.h
-    );
-}
-function buildSprites() {
-    sprites = [];
-
-    // player sprite
-    sprites.push({ x: player.x, y: player.y, w: player.w, h: player.h, color: COLORS.player });
-
-    // enemies
-    for (let e of enemies) {
-        sprites.push({ x: e.x, y: e.y, w: e.w, h: e.h, color: COLORS.enemy });
+// --- room loading / changing ---
+function loadRoom(x, y) {
+    const key = `${x},${y}`;
+    if (!rooms[key]) {
+        console.warn("Room not found:", key);
+        currentRoom = {
+            tiles: new Array(ROOM_WIDTH * ROOM_HEIGHT).fill(0),
+            enemies: []
+        };
+    } else {
+        currentRoom = rooms[key];
     }
-
-    // sword
-    if (player.sword.active) {
-        const s = getSwordBox();
-        sprites.push({ x: s.x, y: s.y, w: s.w, h: s.h, color: COLORS.sword });
-    }
-    if (sprites.length > 64) sprites.length = 64;
+    enemies = JSON.parse(JSON.stringify(currentRoom.enemies));
+    collisionMap = buildCollisionMap(currentRoom);
 }
 
+function changeRoom(dx, dy) {
+    roomX += dx;
+    roomY += dy;
+    loadRoom(roomX, roomY);
+
+    if (dx < 0) player.x = SCREEN_WIDTH - player.w - 1;
+    if (dx > 0) player.x = 1;
+    if (dy < 0) player.y = SCREEN_HEIGHT - player.h - 1;
+    if (dy > 0) player.y = 1;
+}
+
+// --- background render ---
 function drawBackground() {
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
@@ -261,24 +259,22 @@ function drawBackground() {
     }
 }
 
+// --- sprite render with simple NES-like limit ---
 function drawSpritesNES() {
     for (let i = 0; i < sprites.length; i++) {
         const s = sprites[i];
         let countOnScanline = 0;
         for (let j = 0; j < sprites.length; j++) {
             const o = sprites[j];
-            if (o.y <= s.y && o.y + o.h > s.y) {
-                countOnScanline++;
-            }
+            if (o.y <= s.y && o.y + o.h > s.y) countOnScanline++;
         }
-        if (countOnScanline > 8) {
-            // flicker: skip some sprites
-            if (i % 2 === 0) continue;
-        }
+        if (countOnScanline > 8 && i % 2 === 0) continue;
         ctx.fillStyle = s.color;
         ctx.fillRect(Math.floor(s.x), Math.floor(s.y), s.w, s.h);
     }
 }
+
+// --- main loop ---
 function update() {
     updatePlayer();
     updateEnemies();
@@ -296,5 +292,37 @@ function gameLoop() {
     requestAnimationFrame(gameLoop);
 }
 
-gameLoop();
+// --- define rooms using ASCII helper ---
+createRoom(0, 0, [
+    "################",
+    "#..............#",
+    "#..............#",
+    "#..............#",
+    "#..............#",
+    "#..............#",
+    "#..............#",
+    "#..............#",
+    "#..............#",
+    "#..............#",
+    "################"
+]);
 
+createRoom(1, 0, [
+    "################",
+    "#......####....#",
+    "#..............#",
+    "#..............#",
+    "#....####......#",
+    "#..............#",
+    "#..............#",
+    "#......####....#",
+    "#..............#",
+    "#..............#",
+    "################"
+], [
+    { x: 80, y: 80, w: 8, h: 8, dir: "left", speed: 1, state: "walk", timer: 60 }
+]);
+
+// --- start ---
+loadRoom(0, 0);
+gameLoop();
