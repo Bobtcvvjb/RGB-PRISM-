@@ -28,7 +28,7 @@ body {
         translateX(40px)   /* shift right */
         translateY(20px)   /* shift down */
         scaleX(1.3)
-        scaleY(1.0)
+        scaleY(1.3)
         rotateX(2deg)
         rotateY(-2deg);
 
