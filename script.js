@@ -31,7 +31,7 @@ window.addEventListener("keyup", e => {
 // --- colors ---
 const COLORS = {
     bg: "#000000",
-    solid: "#305080",
+    solid: "#FFFFFF",
     player: "#f8f8f8",
     enemy: "#e06060",
     sword: "#f0f000"
