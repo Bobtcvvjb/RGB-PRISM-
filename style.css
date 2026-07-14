@@ -1,4 +1,3 @@
-
 body {
     background: #000;
     display: flex;
@@ -12,6 +11,7 @@ body {
     image-rendering: pixelated;
     image-rendering: crisp-edges;
 
+    /* Stretch the canvas up */
     width: 900px;
     height: 700px;
 
@@ -19,17 +19,16 @@ body {
     border-radius: 0;
     overflow: visible;
 
-    /* Center the distortion */
+    /* ORIGINAL distortion you had */
     transform-origin: center center;
-
-    /* PURE barrel distortion — no rotation */
     transform:
-        perspective(900px)
-        scaleX(1.25)
-        scaleY(1.05)
-        translateZ(-80px);
+        perspective(800px)
+        scaleX(1.3)
+        scaleY(0.95)
+        rotateX(2deg)
+        rotateY(-2deg);
 
-    /* CRT glow */
+    /* Glow + slight blur */
     filter:
         contrast(1.2)
         brightness(1.1)
