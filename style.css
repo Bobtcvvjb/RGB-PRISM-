@@ -1,1 +1,15 @@
 
+body {
+    background: #000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+}
+
+#screen {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    border: 2px solid #fff;
+}
