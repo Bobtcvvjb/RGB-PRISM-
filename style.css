@@ -23,7 +23,7 @@ body {
    transform:
         perspective(900px)
         scaleX(1.25)
-        scaleY(0.85)
+        scaleY(0.65)
         translateZ(-80px)
     /* Glow + slight blur */
     filter:
