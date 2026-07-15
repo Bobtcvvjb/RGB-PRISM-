@@ -12,6 +12,15 @@ const ctx = canvas.getContext("2d");
 // --- input ---
 const input = { up:false, down:false, left:false, right:false, attack:false };
 
+
+// transitions
+let transitioning = false;
+let transitionTimer = 0;
+const TRANSITION_TIME = 20; // frames (⅓ second)
+
+
+
+
 window.addEventListener("keydown", e => {
     if (e.key === "ArrowUp") input.up = true;
     if (e.key === "ArrowDown") input.down = true;
@@ -150,6 +159,7 @@ function aabbOverlap(a, b) {
 
 // --- player update ---
 function updatePlayer() {
+    if (transitioning) return;
     let dx = 0, dy = 0;
 
     if (input.up) { dy = -player.speed; player.dir = "up"; }
@@ -175,10 +185,38 @@ function updatePlayer() {
         if (player.sword.timer <= 0) player.sword.active = false;
     }
 
-    if (player.x < 0) changeRoom(-1, 0);
-    if (player.x + player.w > SCREEN_WIDTH) changeRoom(1, 0);
-    if (player.y < 0) changeRoom(0, -1);
-    if (player.y + player.h > SCREEN_HEIGHT) changeRoom(0, 1);
+   // LEFT edge
+if (player.x < 0) {
+    const tileY = Math.floor(player.y / TILE_SIZE);
+    const idx = tileY * ROOM_WIDTH + 0;
+    if (currentRoom.tiles[idx] === 0) changeRoom(-1, 0);
+    else player.x = 0;
+}
+
+// RIGHT edge
+if (player.x + player.w > SCREEN_WIDTH) {
+    const tileY = Math.floor(player.y / TILE_SIZE);
+    const idx = tileY * ROOM_WIDTH + (ROOM_WIDTH - 1);
+    if (currentRoom.tiles[idx] === 0) changeRoom(1, 0);
+    else player.x = SCREEN_WIDTH - player.w;
+}
+
+// TOP edge
+if (player.y < 0) {
+    const tileX = Math.floor(player.x / TILE_SIZE);
+    const idx = tileX;
+    if (currentRoom.tiles[idx] === 0) changeRoom(0, -1);
+    else player.y = 0;
+}
+
+// BOTTOM edge
+if (player.y + player.h > SCREEN_HEIGHT) {
+    const tileX = Math.floor(player.x / TILE_SIZE);
+    const idx = (ROOM_HEIGHT - 1) * ROOM_WIDTH + tileX;
+    if (currentRoom.tiles[idx] === 0) changeRoom(0, 1);
+    else player.y = SCREEN_HEIGHT - player.h;
+}
+
 }
 
 // --- enemies update ---
@@ -233,14 +271,21 @@ function loadRoom(x, y) {
 }
 
 function changeRoom(dx, dy) {
+    if (transitioning) return;
+
+    transitioning = true;
+    transitionTimer = TRANSITION_TIME;
+
     roomX += dx;
     roomY += dy;
+
     loadRoom(roomX, roomY);
 
-    if (dx < 0) player.x = SCREEN_WIDTH - player.w - 1;
-    if (dx > 0) player.x = 1;
-    if (dy < 0) player.y = SCREEN_HEIGHT - player.h - 1;
-    if (dy > 0) player.y = 1;
+    // reposition player inside new room
+    if (dx < 0) player.x = SCREEN_WIDTH - player.w - 2;
+    if (dx > 0) player.x = 2;
+    if (dy < 0) player.y = SCREEN_HEIGHT - player.h - 2;
+    if (dy > 0) player.y = 2;
 }
 
 // --- background render ---
@@ -276,6 +321,12 @@ function drawSpritesNES() {
 
 // --- main loop ---
 function update() {
+    if (transitioning) {
+    transitionTimer--;
+    if (transitionTimer <= 0) {
+        transitioning = false;
+    }
+}
     updatePlayer();
     updateEnemies();
     buildSprites();
