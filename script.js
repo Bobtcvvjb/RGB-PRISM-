@@ -1,9 +1,9 @@
 // --- constants ---
 const TILE_SIZE = 16;
-const ROOM_WIDTH = 16;   // tiles
-const ROOM_HEIGHT = 11;  // tiles
-const SCREEN_WIDTH = ROOM_WIDTH * TILE_SIZE;   // 256
-const SCREEN_HEIGHT = ROOM_HEIGHT * TILE_SIZE; // 176
+const ROOM_WIDTH = 16;
+const ROOM_HEIGHT = 11;
+const SCREEN_WIDTH = ROOM_WIDTH * TILE_SIZE;
+const SCREEN_HEIGHT = ROOM_HEIGHT * TILE_SIZE;
 
 // --- canvas ---
 const canvas = document.getElementById("screen");
@@ -11,15 +11,6 @@ const ctx = canvas.getContext("2d");
 
 // --- input ---
 const input = { up:false, down:false, left:false, right:false, attack:false };
-
-
-// transitions
-let transitioning = false;
-let transitionTimer = 0;
-const TRANSITION_TIME = 20; // frames (⅓ second)
-
-
-
 
 window.addEventListener("keydown", e => {
     if (e.key === "ArrowUp") input.up = true;
@@ -40,7 +31,7 @@ window.addEventListener("keyup", e => {
 // --- colors ---
 const COLORS = {
     bg: "#000000",
-    solid: "#FFFFFF",
+    solid: "#305080",
     player: "#f8f8f8",
     enemy: "#e06060",
     sword: "#f0f000"
@@ -53,18 +44,11 @@ let roomY = 0;
 let currentRoom = null;
 
 // --- ASCII room helper ---
-// '#' = solid, '.' = empty
 function roomFromAscii(lines) {
-    if (lines.length !== ROOM_HEIGHT)
-        throw new Error("Room must have " + ROOM_HEIGHT + " lines");
     const tiles = [];
     for (let y = 0; y < ROOM_HEIGHT; y++) {
-        const line = lines[y];
-        if (line.length !== ROOM_WIDTH)
-            throw new Error("Line " + y + " must have " + ROOM_WIDTH + " chars");
         for (let x = 0; x < ROOM_WIDTH; x++) {
-            const ch = line[x];
-            tiles.push(ch === "#" ? 1 : 0);
+            tiles.push(lines[y][x] === "#" ? 1 : 0);
         }
     }
     return tiles;
@@ -77,44 +61,80 @@ function createRoom(x, y, asciiLines, enemies = []) {
     };
 }
 
+// --- automatic room templates ---
+const ROOM_TEMPLATES = [
+    [
+        "################",
+        "#..............#",
+        "#..............#",
+        "#..............#",
+        "#..............#",
+        "#..............#",
+        "#..............#",
+        "#..............#",
+        "#..............#",
+        "#..............#",
+        "################"
+    ],
+    [
+        "################",
+        "#......####....#",
+        "#..............#",
+        "#..............#",
+        "#....####......#",
+        "#..............#",
+        "#..............#",
+        "#......####....#",
+        "#..............#",
+        "#..............#",
+        "################"
+    ],
+    [
+        "################",
+        "#..##..........#",
+        "#..##..........#",
+        "#..............#",
+        "#......####....#",
+        "#..............#",
+        "#..........##..#",
+        "#..........##..#",
+        "#..............#",
+        "#..............#",
+        "################"
+    ]
+];
+
+function getRandomTemplate() {
+    return ROOM_TEMPLATES[Math.floor(Math.random() * ROOM_TEMPLATES.length)];
+}
+
 // --- collision ---
-const COLLISION_TILE_SIZE = 16;
-const COLLISION_WIDTH = ROOM_WIDTH;
-const COLLISION_HEIGHT = ROOM_HEIGHT;
-let collisionMap = new Array(COLLISION_WIDTH * COLLISION_HEIGHT).fill(0);
+let collisionMap = new Array(ROOM_WIDTH * ROOM_HEIGHT).fill(0);
 
 function buildCollisionMap(room) {
-    const map = new Array(COLLISION_WIDTH * COLLISION_HEIGHT).fill(0);
-    for (let y = 0; y < ROOM_HEIGHT; y++) {
-        for (let x = 0; x < ROOM_WIDTH; x++) {
-            const idx = y * ROOM_WIDTH + x;
-            map[idx] = room.tiles[idx] === 1 ? 1 : 0;
-        }
+    const map = [];
+    for (let i = 0; i < room.tiles.length; i++) {
+        map[i] = room.tiles[i] === 1 ? 1 : 0;
     }
     return map;
 }
 
 function isSolidPixel(px, py) {
     if (px < 0 || py < 0 || px >= SCREEN_WIDTH || py >= SCREEN_HEIGHT) return true;
-    const cx = Math.floor(px / COLLISION_TILE_SIZE);
-    const cy = Math.floor(py / COLLISION_TILE_SIZE);
-    const idx = cy * COLLISION_WIDTH + cx;
-    return collisionMap[idx] === 1;
+    const cx = Math.floor(px / TILE_SIZE);
+    const cy = Math.floor(py / TILE_SIZE);
+    return collisionMap[cy * ROOM_WIDTH + cx] === 1;
 }
 
-// --- player ---
+// --- player (11×11) ---
 const player = {
-    x: SCREEN_WIDTH / 2 - 4,
-    y: SCREEN_HEIGHT / 2 - 4,
+    x: SCREEN_WIDTH / 2 - 6,
+    y: SCREEN_HEIGHT / 2 - 6,
     w: 11,
     h: 11,
     dir: "down",
     speed: 1,
-    sword: {
-        active: false,
-        timer: 0,
-        maxTime: 10
-    }
+    sword: { active:false, timer:0, maxTime:10 }
 };
 
 // --- enemies ---
@@ -126,26 +146,29 @@ let sprites = [];
 function buildSprites() {
     sprites = [];
     sprites.push({ x: player.x, y: player.y, w: player.w, h: player.h, color: COLORS.player });
+
     for (let e of enemies) {
         sprites.push({ x: e.x, y: e.y, w: e.w, h: e.h, color: COLORS.enemy });
     }
+
     if (player.sword.active) {
         const s = getSwordBox();
         sprites.push({ x: s.x, y: s.y, w: s.w, h: s.h, color: COLORS.sword });
     }
-    if (sprites.length > 64) sprites.length = 64;
 }
 
-// --- sword / collision ---
+// --- sword ---
 function getSwordBox() {
     const size = 8;
     let sx = player.x;
     let sy = player.y;
+
     if (player.dir === "up") sy -= size;
     if (player.dir === "down") sy += player.h;
     if (player.dir === "left") sx -= size;
     if (player.dir === "right") sx += player.w;
-    return { x: sx, y: sy, w: size, h: size };
+
+    return { x:sx, y:sy, w:size, h:size };
 }
 
 function aabbOverlap(a, b) {
@@ -157,15 +180,21 @@ function aabbOverlap(a, b) {
     );
 }
 
+// --- transition lock ---
+let transitioning = false;
+let transitionTimer = 0;
+const TRANSITION_TIME = 20;
+
 // --- player update ---
 function updatePlayer() {
     if (transitioning) return;
+
     let dx = 0, dy = 0;
 
     if (input.up) { dy = -player.speed; player.dir = "up"; }
-    else if (input.down) { dy = player.speed; player.dir = "down"; }
-    else if (input.left) { dx = -player.speed; player.dir = "left"; }
-    else if (input.right) { dx = player.speed; player.dir = "right"; }
+    if (input.down) { dy = player.speed; player.dir = "down"; }
+    if (input.left) { dx = -player.speed; player.dir = "left"; }
+    if (input.right) { dx = player.speed; player.dir = "right"; }
 
     if (!isSolidPixel(player.x + dx, player.y) &&
         !isSolidPixel(player.x + dx + player.w - 1, player.y + player.h - 1)) {
@@ -185,41 +214,81 @@ function updatePlayer() {
         if (player.sword.timer <= 0) player.sword.active = false;
     }
 
-   // LEFT edge
-if (player.x < 0) {
-    const tileY = Math.floor(player.y / TILE_SIZE);
-    const idx = tileY * ROOM_WIDTH + 0;
-    if (currentRoom.tiles[idx] === 0) changeRoom(-1, 0);
-    else player.x = 0;
+    checkRoomExit();
 }
 
-// RIGHT edge
-if (player.x + player.w > SCREEN_WIDTH) {
-    const tileY = Math.floor(player.y / TILE_SIZE);
-    const idx = tileY * ROOM_WIDTH + (ROOM_WIDTH - 1);
-    if (currentRoom.tiles[idx] === 0) changeRoom(1, 0);
-    else player.x = SCREEN_WIDTH - player.w;
+// --- exit logic (only through '.' tiles) ---
+function checkRoomExit() {
+    // LEFT
+    if (player.x < 0) {
+        const tileY = Math.floor(player.y / TILE_SIZE);
+        if (currentRoom.tiles[tileY * ROOM_WIDTH + 0] === 0)
+            changeRoom(-1, 0);
+        else player.x = 0;
+    }
+
+    // RIGHT
+    if (player.x + player.w > SCREEN_WIDTH) {
+        const tileY = Math.floor(player.y / TILE_SIZE);
+        if (currentRoom.tiles[tileY * ROOM_WIDTH + (ROOM_WIDTH - 1)] === 0)
+            changeRoom(1, 0);
+        else player.x = SCREEN_WIDTH - player.w;
+    }
+
+    // TOP
+    if (player.y < 0) {
+        const tileX = Math.floor(player.x / TILE_SIZE);
+        if (currentRoom.tiles[tileX] === 0)
+            changeRoom(0, -1);
+        else player.y = 0;
+    }
+
+    // BOTTOM
+    if (player.y + player.h > SCREEN_HEIGHT) {
+        const tileX = Math.floor(player.x / TILE_SIZE);
+        if (currentRoom.tiles[(ROOM_HEIGHT - 1) * ROOM_WIDTH + tileX] === 0)
+            changeRoom(0, 1);
+        else player.y = SCREEN_HEIGHT - player.h;
+    }
 }
 
-// TOP edge
-if (player.y < 0) {
-    const tileX = Math.floor(player.x / TILE_SIZE);
-    const idx = tileX;
-    if (currentRoom.tiles[idx] === 0) changeRoom(0, -1);
-    else player.y = 0;
+// --- room loading ---
+function loadRoom(x, y) {
+    const key = `${x},${y}`;
+    currentRoom = rooms[key];
+    enemies = JSON.parse(JSON.stringify(currentRoom.enemies));
+    collisionMap = buildCollisionMap(currentRoom);
 }
 
-// BOTTOM edge
-if (player.y + player.h > SCREEN_HEIGHT) {
-    const tileX = Math.floor(player.x / TILE_SIZE);
-    const idx = (ROOM_HEIGHT - 1) * ROOM_WIDTH + tileX;
-    if (currentRoom.tiles[idx] === 0) changeRoom(0, 1);
-    else player.y = SCREEN_HEIGHT - player.h;
+// --- room changing ---
+function changeRoom(dx, dy) {
+    if (transitioning) return;
+
+    const newX = roomX + dx;
+    const newY = roomY + dy;
+    const key = `${newX},${newY}`;
+
+    // auto-generate room if missing
+    if (!rooms[key]) {
+        const template = getRandomTemplate();
+        createRoom(newX, newY, template);
+    }
+
+    transitioning = true;
+    transitionTimer = TRANSITION_TIME;
+
+    roomX = newX;
+    roomY = newY;
+
+    loadRoom(roomX, roomY);
+
+    if (dx < 0) player.x = SCREEN_WIDTH - player.w - 2;
+    if (dx > 0) player.x = 2;
+    if (dy < 0) player.y = SCREEN_HEIGHT - player.h - 2;
+    if (dy > 0) player.y = 2;
 }
 
-}
-
-// --- enemies update ---
+// --- enemies ---
 function updateEnemies() {
     for (let e of enemies) {
         e.timer--;
@@ -235,60 +304,17 @@ function updateEnemies() {
         if (e.dir === "left") dx = -e.speed;
         if (e.dir === "right") dx = e.speed;
 
-        if (!isSolidPixel(e.x + dx, e.y) &&
-            !isSolidPixel(e.x + dx + e.w - 1, e.y + e.h - 1)) {
-            e.x += dx;
-        }
-        if (!isSolidPixel(e.x, e.y + dy) &&
-            !isSolidPixel(e.x + e.w - 1, e.y + dy + e.h - 1)) {
-            e.y += dy;
-        }
+        if (!isSolidPixel(e.x + dx, e.y)) e.x += dx;
+        if (!isSolidPixel(e.x, e.y + dy)) e.y += dy;
 
-        if (player.sword.active) {
-            const swordBox = getSwordBox();
-            if (aabbOverlap(swordBox, e)) {
-                e.x = -1000;
-                e.y = -1000;
-            }
+        if (player.sword.active && aabbOverlap(getSwordBox(), e)) {
+            e.x = -9999;
+            e.y = -9999;
         }
     }
 }
 
-// --- room loading / changing ---
-function loadRoom(x, y) {
-    const key = `${x},${y}`;
-    if (!rooms[key]) {
-        console.warn("Room not found:", key);
-        currentRoom = {
-            tiles: new Array(ROOM_WIDTH * ROOM_HEIGHT).fill(0),
-            enemies: []
-        };
-    } else {
-        currentRoom = rooms[key];
-    }
-    enemies = JSON.parse(JSON.stringify(currentRoom.enemies));
-    collisionMap = buildCollisionMap(currentRoom);
-}
-
-function changeRoom(dx, dy) {
-    if (transitioning) return;
-
-    transitioning = true;
-    transitionTimer = TRANSITION_TIME;
-
-    roomX += dx;
-    roomY += dy;
-
-    loadRoom(roomX, roomY);
-
-    // reposition player inside new room
-    if (dx < 0) player.x = SCREEN_WIDTH - player.w - 2;
-    if (dx > 0) player.x = 2;
-    if (dy < 0) player.y = SCREEN_HEIGHT - player.h - 2;
-    if (dy > 0) player.y = 2;
-}
-
-// --- background render ---
+// --- background ---
 function drawBackground() {
     ctx.fillStyle = COLORS.bg;
     ctx.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
@@ -304,16 +330,9 @@ function drawBackground() {
     }
 }
 
-// --- sprite render with simple NES-like limit ---
+// --- sprite render ---
 function drawSpritesNES() {
-    for (let i = 0; i < sprites.length; i++) {
-        const s = sprites[i];
-        let countOnScanline = 0;
-        for (let j = 0; j < sprites.length; j++) {
-            const o = sprites[j];
-            if (o.y <= s.y && o.y + o.h > s.y) countOnScanline++;
-        }
-        if (countOnScanline > 8 && i % 2 === 0) continue;
+    for (let s of sprites) {
         ctx.fillStyle = s.color;
         ctx.fillRect(Math.floor(s.x), Math.floor(s.y), s.w, s.h);
     }
@@ -322,11 +341,10 @@ function drawSpritesNES() {
 // --- main loop ---
 function update() {
     if (transitioning) {
-    transitionTimer--;
-    if (transitionTimer <= 0) {
-        transitioning = false;
+        transitionTimer--;
+        if (transitionTimer <= 0) transitioning = false;
     }
-}
+
     updatePlayer();
     updateEnemies();
     buildSprites();
@@ -343,24 +361,10 @@ function gameLoop() {
     requestAnimationFrame(gameLoop);
 }
 
-// --- define rooms using ASCII helper ---
+// --- starting room ---
 createRoom(0, 0, [
-    "#######..#######",
-    "#..............#",
-    "#..............#",
-    "#..............#",
-    "#..............#",
-    "................",
-    "#..............#",
-    "#..............#",
-    "#..............#",
-    "#..............#",
-    "#######..#######"
-]);
-
-createRoom(1, 0, [
     "################",
-    "#......####....#",
+    "#..............#",
     "#..............#",
     "#..............#",
     "#....####......#",
@@ -370,10 +374,7 @@ createRoom(1, 0, [
     "#..............#",
     "#..............#",
     "################"
-], [
-    { x: 80, y: 80, w: 8, h: 8, dir: "left", speed: 1, state: "walk", timer: 60 }
 ]);
 
-// --- start ---
 loadRoom(0, 0);
 gameLoop();
