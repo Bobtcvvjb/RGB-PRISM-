@@ -97,8 +97,8 @@ function isSolidPixel(px, py) {
 const player = {
     x: SCREEN_WIDTH / 2 - 4,
     y: SCREEN_HEIGHT / 2 - 4,
-    w: 8,
-    h: 8,
+    w: 16,
+    h: 16,
     dir: "down",
     speed: 1,
     sword: {
